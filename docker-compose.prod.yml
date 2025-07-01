@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (Production)
+  postgres:
+    image: postgres:15-alpine
+    container_name: mentalspace-postgres-prod
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mentalspace_ehr}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+      - ./src/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - mentalspace-network-prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-mentalspace_ehr}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Node.js Application (Production)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mentalspace-app-prod
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-mentalspace_ehr}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      PORT: 3000
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mentalspace-network-prod
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: mentalspace-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - mentalspace-network-prod
+    restart: unless-stopped
+
+volumes:
+  postgres_data_prod:
+    driver: local
+
+networks:
+  mentalspace-network-prod:
+    driver: bridge 

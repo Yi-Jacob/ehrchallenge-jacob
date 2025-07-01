@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: mentalspace-postgres
+    environment:
+      POSTGRES_DB: mentalspace_ehr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - mentalspace-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mentalspace_ehr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Node.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: mentalspace-app
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mentalspace_ehr
+      DB_USER: postgres
+      DB_PASSWORD: postgres123
+      JWT_SECRET: your_super_secret_jwt_key_here_make_it_long_and_random
+      JWT_EXPIRES_IN: 24h
+      ENCRYPTION_KEY: your_32_character_encryption_key_here
+      PORT: 3000
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mentalspace-network
+    command: sh -c "npm run migrate && npm run seed && npm run dev"
+
+  # Frontend React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mentalspace-frontend
+    ports:
+      - "3001:3000"
+    networks:
+      - mentalspace-network
+    depends_on:
+      - app
+
+  # pgAdmin (Optional - for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mentalspace-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@mentalspace.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - mentalspace-network
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  mentalspace-network:
+    driver: bridge 

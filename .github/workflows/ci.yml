@@ -1,0 +1,44 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  build-and-push-api:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/mentalspace-ehr-api:latest .
+      - run: echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+      - run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/mentalspace-ehr-api:latest
+
+  build-and-push-mobile:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/mentalspace-ehr-mobile:latest ./mobileApp
+      - run: echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+      - run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/mentalspace-ehr-mobile:latest
+
+  migrate:
+    needs: build-and-push-api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: npm ci
+      - run: npx prisma migrate deploy 

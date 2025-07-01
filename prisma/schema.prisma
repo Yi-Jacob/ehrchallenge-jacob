@@ -1,0 +1,181 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenant EHR System Schema
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  domain    String?  @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users          User[]
+  patients       Patient[]
+  appointments   Appointment[]
+  clinicalNotes  ClinicalNote[]
+  auditLogs      AuditLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  email        String
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         UserRole
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient  Patient?
+  therapistAppointments Appointment[] @relation("TherapistAppointments")
+  therapistNotes ClinicalNote[] @relation("TherapistNotes")
+  therapistProfile TherapistProfile?
+
+  // Unique constraint
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model Patient {
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  userId                String?   @unique @map("user_id")
+  firstName             String    @map("first_name")
+  lastName              String    @map("last_name")
+  dateOfBirth           DateTime  @map("date_of_birth")
+  gender                String?
+  phone                 String?
+  email                 String?
+  address               String?
+  emergencyContactName  String?   @map("emergency_contact_name")
+  emergencyContactPhone String?   @map("emergency_contact_phone")
+  insuranceInfo         String?   @map("insurance_info")
+  medicalHistory        String?   @map("medical_history")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  appointments  Appointment[]
+  clinicalNotes ClinicalNote[]
+
+  @@map("patients")
+}
+
+model Appointment {
+  id               String            @id @default(uuid())
+  tenantId         String            @map("tenant_id")
+  patientId        String            @map("patient_id")
+  therapistId      String            @map("therapist_id")
+  appointmentDate  DateTime          @map("appointment_date")
+  durationMinutes  Int               @default(60) @map("duration_minutes")
+  status           AppointmentStatus @default(SCHEDULED)
+  notes            String?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  therapist     User           @relation("TherapistAppointments", fields: [therapistId], references: [id], onDelete: Cascade)
+  clinicalNotes ClinicalNote[]
+
+  @@map("appointments")
+}
+
+model ClinicalNote {
+  id          String        @id @default(uuid())
+  tenantId    String        @map("tenant_id")
+  patientId   String        @map("patient_id")
+  therapistId String        @map("therapist_id")
+  appointmentId String?     @map("appointment_id")
+  noteType    ClinicalNoteType @default(SOAP) @map("note_type")
+  subjective  String?
+  objective   String?
+  assessment  String?
+  plan        String?
+  isSigned    Boolean       @default(false) @map("is_signed")
+  signedAt    DateTime?     @map("signed_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient    Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  therapist  User       @relation("TherapistNotes", fields: [therapistId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@map("clinical_notes")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  userId     String?  @map("user_id")
+  action     String
+  tableName  String   @map("table_name")
+  recordId   String?  @map("record_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
+model TherapistProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  licenseNumber  String?
+  specialization String?
+  bio            String?
+  phone          String?
+  email          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  THERAPIST
+  CLIENT
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ClinicalNoteType {
+  SOAP
+  PROGRESS
+  ASSESSMENT
+  TREATMENT_PLAN
+} 

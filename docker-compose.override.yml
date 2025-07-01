@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Override app service for development
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      NODE_ENV: development
+      DEBUG: app:*
+    command: sh -c "npm run migrate && npm run seed && npm run dev"
+    stdin_open: true
+    tty: true
+
+  # Add Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: mentalspace-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mentalspace-network
+    command: redis-server --appendonly yes
+
+  # Add MailHog for email testing (optional)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mentalspace-mailhog
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - mentalspace-network
+
+volumes:
+  redis_data:
+    driver: local 
